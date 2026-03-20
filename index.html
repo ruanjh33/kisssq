@@ -2731,18 +2731,22 @@
             swipeText.style.bottom = '40px'; 
         }
 
-        // 🌟 修复 2：配合闪电缓存，彻底抹杀残影
+                // 🌟 修复 2：配合闪电缓存，彻底抹杀残影 (终极防重置版)
         const lockSysNode = document.getElementById('lock-system');
         if (!sysAppearance.lockEnabled) {
-            localStorage.setItem('kiss_lock_disabled', 'true'); // 确保老用户也同步上缓存
-            lockSysNode.style.display = 'none'; // 彻底物理隐藏
+            localStorage.setItem('kiss_lock_disabled', 'true'); 
+            lockSysNode.style.display = 'none'; 
             lockSysNode.classList.add('unlocked');
             if (typeof checkAndShowUpdate === 'function') checkAndShowUpdate();
         } else {
             localStorage.removeItem('kiss_lock_disabled');
-            lockSysNode.style.display = ''; // 恢复显示
-            lockSysNode.classList.remove('unlocked');
+            // 🛡️ 核心防误触：如果手机已经被解锁了，绝对不准再把锁屏盖下来！只有开机时才允许显示！
+            if (!lockSysNode.classList.contains('unlocked')) {
+                lockSysNode.style.display = ''; 
+                lockSysNode.classList.remove('unlocked');
+            }
         }
+
 
 
         generatePasscodeDots();
