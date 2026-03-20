@@ -1784,7 +1784,9 @@
                         <div class="avatar-label">我</div>
                     </div>
                 </div>
-                <div class="input-section"><div class="section-title">AI 的真实姓名</div><input type="text" id="set-friend-realname" class="modal-input" style="background:var(--card-bg); margin-bottom:0;" placeholder="AI 本来的名字"></div>
+                <!-- 🌟 新增：备注名与真名分离 -->
+                <div class="input-section"><div class="section-title">聊天备注名 (仅显示)</div><input type="text" id="set-friend-nickname" class="modal-input" style="background:var(--card-bg); margin-bottom:0;" placeholder="你想怎么称呼 Ta"></div>
+                <div class="input-section"><div class="section-title">AI 的真实姓名 (用于记忆)</div><input type="text" id="set-friend-realname" class="modal-input" style="background:var(--card-bg); margin-bottom:0;" placeholder="AI 本来的名字"></div>
                 <div class="input-section"><div class="section-title">对方的人设 (写给 AI)</div><textarea id="set-friend-persona" rows="3" placeholder="定义AI扮演的角色性格、背景..."></textarea></div>
                 <div class="input-section"><div class="section-title">我的人设 (写给我)</div><textarea id="set-my-persona" rows="3" placeholder="定义你在对话中的身份与设定..."></textarea></div>
                 <div class="input-section"><div class="section-title">专属语音音色 ID</div><input type="text" id="set-friend-voice-id" class="modal-input" style="background:var(--card-bg); margin-bottom:0;" placeholder="如: speech-01-hd (留空则用全局)"></div>
@@ -2731,7 +2733,7 @@
             swipeText.style.bottom = '40px'; 
         }
 
-                // 🌟 修复 2：配合闪电缓存，彻底抹杀残影 (终极防重置版)
+        // 🌟 修复 2：配合闪电缓存，彻底抹杀残影 (终极防重置版)
         const lockSysNode = document.getElementById('lock-system');
         if (!sysAppearance.lockEnabled) {
             localStorage.setItem('kiss_lock_disabled', 'true'); 
@@ -2746,7 +2748,6 @@
                 lockSysNode.classList.remove('unlocked');
             }
         }
-
 
 
         generatePasscodeDots();
@@ -4528,7 +4529,8 @@ await saveToBackpack({ name: content, img: '', category: 'AI_GIFT', price: extra
     // --- 聊天设定 ---
     async function openChatSettings() { 
         const f = friendsListCache.find(f => f.id === currentChatFriendId); 
-        document.getElementById('set-friend-realname').value = f.realName || f.name || '';
+        document.getElementById('set-friend-nickname').value = f.name; // 这里的 name 其实就是备注名
+        document.getElementById('set-friend-realname').value = f.realName || '';
         document.getElementById('set-friend-persona').value = f.persona || ''; document.getElementById('set-my-persona').value = f.myPersona || ''; document.getElementById('auto-sum-threshold').value = f.autoSumThreshold || 20; document.getElementById('context-limit-input').value = f.contextLimit || 80;
         document.getElementById('set-friend-voice-id').value = f.voiceId || ''; document.getElementById('set-friend-voice-lang').value = f.voiceLang || '';
 
@@ -4550,8 +4552,11 @@ await saveToBackpack({ name: content, img: '', category: 'AI_GIFT', price: extra
     async function saveChatSettings() {
         const f = friendsListCache.find(f => f.id === currentChatFriendId);
         const fBg = document.getElementById('preview-friend-avatar').style.backgroundImage, mBg = document.getElementById('preview-my-avatar').style.backgroundImage;
+        // 核心：备注名存进 name，真名存进 realName
+        f.name = document.getElementById('set-friend-nickname').value.trim() || f.name;
         f.realName = document.getElementById('set-friend-realname').value.trim() || f.name;
-        f.persona = document.getElementById('set-friend-persona').value; f.myPersona = document.getElementById('set-my-persona').value; f.autoSumThreshold = parseInt(document.getElementById('auto-sum-threshold').value) || 20; f.contextLimit = parseInt(document.getElementById('context-limit-input').value) || 80;
+        f.persona = document.getElementById('set-friend-persona').value; 
+f.myPersona = document.getElementById('set-my-persona').value; f.autoSumThreshold = parseInt(document.getElementById('auto-sum-threshold').value) || 20; f.contextLimit = parseInt(document.getElementById('context-limit-input').value) || 80;
         f.voiceId = document.getElementById('set-friend-voice-id').value.trim(); f.voiceLang = document.getElementById('set-friend-voice-lang').value;
 
         if(fBg !== 'none' && fBg !== '') f.avatar = fBg.slice(5, -2); else f.avatar = '';
@@ -7734,20 +7739,22 @@ await saveToBackpack({ name: prod.name, img: prod.img, category: prod.category, 
         const apiConfig = await SimpleDB.get('store', 'api_current');
         if (!apiConfig || !apiConfig.url || !apiConfig.key) return appendCaption('assistant', '[系统提示：请先配置大模型 API]');
 
-        // 🌟 核心修复：提取最近的聊天记录和你的真实姓名，塞给 AI
         const msgs = await SimpleDB.getByIndex('chat_messages', 'friendId', callState.friendId) || [];
-        const validMsgs = msgs.filter(m => m.status !== 'unsend').slice(-(friend.contextLimit || 50)); // 动态读取你设定的上下文长度，默认50条
-        const myProfile = await SimpleDB.get('store', 'global_profile') || { name: '我' };
-        const historyText = validMsgs.map(m => `${m.role === 'user' ? myProfile.name : friend.name}: ${m.type==='text'?m.content:'['+m.type+']'}`).join('\n');
+        const validMsgs = msgs.filter(m => m.status !== 'unsend').slice(-(friend.contextLimit || 50));
+        
+        // 记录格式化 (用 '我' 代替全局名字，防止认知错乱)
+        const historyText = validMsgs.map(m => `${m.role === 'user' ? '我' : friend.name}: ${m.type==='text'?m.content:'['+m.type+']'}`).join('\n');
 
-        const sysPrompt = `系统提示：你的真实身份是【${friend.realName || friend.name}】。
-电话另一头的人是【${myProfile.name}】。
-你的设定：${friend.persona}
+        // 🌟 核心修复：完美继承你在聊天设定里写的【双向人设】！
+        const personaPrompt = `【身份认知】\n你的真实姓名是：${friend.realName || friend.name}。\n【对方设定 (写给你的，你需要扮演的角色)】：\n${friend.persona}\n\n【我的设定 (电话另一头的人是谁，有什么设定)】：\n${friend.myPersona}`;
 
-【你们刚刚在文字聊天里的记录】：
+        const sysPrompt = `系统提示：你现在正在打语音电话。
+${personaPrompt}
+
+【你们刚刚在文字聊天里的最新记录】：
 ${historyText}
 
-你现在正在和 ${myProfile.name} 打语音电话。请结合你们刚才的聊天上下文和关系，用非常口语化、自然的语音风格回复。
+请严格遵循上述的人设关系，用非常口语化、自然的语音风格回复。
 绝对不要发超过 3 句话的长篇大论！不要用括号写动作描写。如果对方没说话，你可以主动找话题。
 【核心机制】：如果你觉得不想聊了、生气了，或者要睡觉/去忙了想主动挂断电话，请在你说完最后一句话的末尾，加上 \x5BHANGUP\x5D 指令，系统会自动帮你挂断。`;
 
@@ -7855,8 +7862,14 @@ ${historyText}
             notifyIsland('正在将通话记录存入记忆...', 'ph-fill ph-brain', '#007aff', false);
             const apiConfig = await SimpleDB.get('store', 'api_current');
             const myProfile = await SimpleDB.get('store', 'global_profile') || { name: '我' };
-            const conversation = callState.context.map(msg => `${msg.role === 'user' ? myProfile.name : friend.name}: ${msg.content}`).join('\n');
-            const sysPrompt = `请以第三人称视角，用一段话简要总结以下这通语音电话的核心内容与双方情绪。对话双方是【${myProfile.name}】和【${friend.name}】。注意：如果记录里只有一方在说话，说明另一方在静静倾听。必须使用双方的真实名字，不要有多余废话。`;
+            // 🌟 核心修复：总结时强制使用 AI 的真名 (realName)
+            const aiTrueName = friend.realName || friend.name;
+            const conversation = callState.context.map(msg => `${msg.role === 'user' ? myProfile.name : aiTrueName}: ${msg.content}`).join('\n');
+            
+            const sysPrompt = `请以第三人称视角，用一段话简要总结以下这通语音电话的核心内容与双方情绪。
+对话双方是【${myProfile.name}】和【${aiTrueName}】。
+注意：如果记录里只有一方在说话，说明另一方在静静倾听，请照常总结，不要报错。必须使用双方的真实名字，不要有多余废话。`;
+
             
             try {
                 const res = await fetch(apiConfig.url + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.key}` }, body: JSON.stringify({ model: apiConfig.model, temperature: 0.5, messages: [{role: 'system', content: sysPrompt}, {role: 'user', content: conversation}] }) });
